@@ -122,14 +122,17 @@ export function useTransport(
   };
   const captureRange: CapturePort["captureRange"] = (_sceneId, width) => {
     const actual = loaded.current;
-    return actual
-      ? captureWindow(
-          actual.episode.sceneId,
-          actual.element.currentTime,
-          actual.element.duration,
-          width,
-        )
-      : null;
+    // 新声音尚未载入完成时拒绝标记，避免把旧录音标成新来源
+    if (!actual || view.loading || actual.episode.id !== episode.id)
+      return null;
+    const range = captureWindow(
+      actual.episode.sceneId,
+      actual.element.currentTime,
+      actual.element.duration,
+      width,
+    );
+    // 出处以实际载入的录音为准，而不是当前请求中的录音
+    return range ? { ...range, sourceId: actual.episode.id } : null;
   };
   return {
     view,

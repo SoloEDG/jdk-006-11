@@ -1078,6 +1078,11 @@ footer i {
   text-align: left;
   line-height: 1.6;
 }
+.note-play.is-missing {
+  color: #6f7d84;
+  margin: 6px 0;
+  cursor: not-allowed;
+}
 .note-actions {
   display: flex;
   justify-content: flex-end;
@@ -1260,8 +1265,20 @@ footer i {
   color: #7999a8;
 }
 .evidence-card .note-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 8px;
   color: #627e8c;
+  margin: 3px 0 2px;
+}
+.evidence-card .note-version {
+  color: #9db4be;
+  letter-spacing: 0.4px;
+}
+.evidence-card .note-version.unknown {
+  color: #8c7360;
 }
 .evidence-panel > button {
   font-size: 10px;

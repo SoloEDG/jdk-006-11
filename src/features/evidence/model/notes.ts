@@ -12,7 +12,18 @@ export function normalizeAnchor(anchor: AudioBookmark): AudioBookmark {
     anchor.end < anchor.start
   )
     throw new Error("笔记的播放范围无效");
-  return { sceneId: anchor.sceneId, start: anchor.start, end: anchor.end };
+  if (
+    anchor.sourceId !== undefined &&
+    (typeof anchor.sourceId !== "string" || !anchor.sourceId)
+  )
+    throw new Error("笔记的录音来源无效");
+  const normalized: AudioBookmark = {
+    sceneId: anchor.sceneId,
+    start: anchor.start,
+    end: anchor.end,
+  };
+  if (anchor.sourceId !== undefined) normalized.sourceId = anchor.sourceId;
+  return normalized;
 }
 export function createEvidence(): EvidenceState {
   return { notes: [], clues: [], selectedId: null };

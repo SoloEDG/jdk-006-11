@@ -57,6 +57,8 @@ export interface AudioBookmark {
   sceneId: SceneId;
   start: number;
   end: number;
+  /** 实际载入录音的出处（episode id）；缺失表示来源未知（旧笔记），禁止精确回听 */
+  sourceId?: string;
 }
 export interface EvidenceNote {
   id: string;

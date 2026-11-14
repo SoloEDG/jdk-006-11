@@ -59,9 +59,19 @@ export function validateSnapshot(
     const sceneId = scene(a.sceneId),
       start = number(a.start, "范围起点"),
       end = number(a.end, "范围终点");
-    if (end < start || end > duration(sceneId))
-      throw new Error("笔记范围超出音频");
-    return { sceneId, start, end };
+    if (end < start) throw new Error("笔记范围超出音频");
+    if (a.sourceId === undefined || a.sourceId === null) {
+      // 旧笔记没有版本信息：只保留范围，不按当前线索猜测补齐
+      if (end > duration(sceneId)) throw new Error("笔记范围超出音频");
+      return { sceneId, start, end };
+    }
+    const sourceId = string(a.sourceId, "录音来源");
+    const source = content.episodes.find((episode) => episode.id === sourceId);
+    if (!source) throw new Error("笔记的录音来源不存在");
+    if (source.sceneId !== sceneId)
+      throw new Error("笔记的录音来源与场景不一致");
+    if (end > source.duration) throw new Error("笔记范围超出来源音频");
+    return { sceneId, start, end, sourceId };
   };
   const rawStory = object(root.story, "调查进度");
   const decisions = array(rawStory.decisions, "决策").map((value) => {

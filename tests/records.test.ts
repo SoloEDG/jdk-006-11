@@ -19,6 +19,7 @@ import {
   exportSlot,
   parseImported,
 } from "../src/features/profiles/index";
+import { CASE_CONTENT } from "../src/features/story";
 import type { CaseContent, Investigation } from "../src/shared/types";
 const content: CaseContent = {
   id: "test",
@@ -110,7 +111,7 @@ test("snapshot rebuild strips unknown fields and rejects invalid ranges and hear
   const s = snapshot();
   const raw = JSON.parse(JSON.stringify(s));
   raw.extra = "drop";
-  raw.evidence.notes[0].anchor.sourceId = "drop";
+  raw.evidence.notes[0].anchor.extra = "drop";
   const checked = validateSnapshot(raw, content);
   assert.equal("extra" in checked, false);
   assert.deepEqual(checked.evidence.notes[0].anchor, anchor);
@@ -164,4 +165,111 @@ test("storage recovers corruption with warning, enforces limit and surfaces quot
     },
   });
   assert.throws(() => writeSlot([], first), /quota/);
+});
+const fogStory: Investigation = {
+  sceneId: "interview",
+  visited: ["arrival", "interview"],
+  decisions: [],
+  ending: null,
+};
+const fogResume = { sceneId: "interview" as const, position: 0, rate: 1 };
+function fogSnapshot(noteAnchor: object, clues: string[] = []) {
+  const evidence = addNote(
+    { ...createEvidence(), clues },
+    noteAnchor as any,
+    "memo",
+  );
+  return createSnapshot(CASE_CONTENT, fogStory, evidence, {}, fogResume);
+}
+test("notes keep recording provenance through edit, pin and save round-trip", () => {
+  const state = addNote(
+    createEvidence(),
+    { sceneId: "interview", start: 0, end: 5, sourceId: "interview-normal" },
+    "memo",
+  );
+  const id = state.notes[0].id;
+  for (const next of [editNote(state, id, "updated"), togglePinned(state, id)])
+    assert.equal(next.notes[0].anchor.sourceId, "interview-normal");
+  assert.throws(() =>
+    addNote(
+      createEvidence(),
+      { sceneId: "interview", start: 0, end: 5, sourceId: 7 } as any,
+      "bad",
+    ),
+  );
+  const snap = validateSnapshot(
+    JSON.parse(
+      JSON.stringify(
+        fogSnapshot({
+          sceneId: "interview",
+          start: 0,
+          end: 5,
+          sourceId: "interview-normal",
+        }),
+      ),
+    ),
+    CASE_CONTENT,
+  );
+  assert.equal(
+    snap.evidence.notes[0].anchor.sourceId,
+    "interview-normal",
+  );
+});
+test("imports with contradictory source, scene or range are rejected as a whole", () => {
+  const tampered = (anchor: object) => {
+    const slot = createSlot(
+      "x",
+      fogSnapshot({
+        sceneId: "interview",
+        start: 0,
+        end: 5,
+        sourceId: "interview-normal",
+      }),
+    );
+    const raw = JSON.parse(exportSlot(slot));
+    raw.snapshot.evidence.notes[0].anchor = anchor;
+    return JSON.stringify(raw);
+  };
+  // 来源不存在
+  assert.throws(() =>
+    parseImported(
+      tampered({ sceneId: "interview", start: 0, end: 5, sourceId: "nope" }),
+      CASE_CONTENT,
+    ),
+  );
+  // 来源与场景矛盾
+  assert.throws(() =>
+    parseImported(
+      tampered({ sceneId: "arrival", start: 0, end: 5, sourceId: "interview-normal" }),
+      CASE_CONTENT,
+    ),
+  );
+  // 范围超出来源录音（interview-normal 长 24.735，interview-aware 长 28.661）
+  assert.throws(() =>
+    parseImported(
+      tampered({ sceneId: "interview", start: 20, end: 26, sourceId: "interview-normal" }),
+      CASE_CONTENT,
+    ),
+  );
+  const ok = parseImported(
+    tampered({ sceneId: "interview", start: 20, end: 26, sourceId: "interview-aware" }),
+    CASE_CONTENT,
+  );
+  assert.equal(
+    ok.snapshot.evidence.notes[0].anchor.sourceId,
+    "interview-aware",
+  );
+});
+test("legacy notes without provenance stay unknown and are never backfilled", () => {
+  const raw = JSON.parse(
+    JSON.stringify(
+      fogSnapshot({ sceneId: "interview", start: 0, end: 26 }, ["bell"]),
+    ),
+  );
+  delete raw.evidence.notes[0].anchor.sourceId;
+  const checked = validateSnapshot(raw, CASE_CONTENT);
+  const anchor = checked.evidence.notes[0].anchor;
+  assert.equal("sourceId" in anchor, false);
+  assert.equal(anchor.end, 26);
+  assert.deepEqual(checked.evidence.clues, ["bell"]);
 });

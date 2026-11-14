@@ -42,8 +42,16 @@ export function useCase() {
     [notice, setNotice] = useState(
       boot.warning || "戴上耳机，从第一通来电开始调查。",
     ),
-    [dirty, setDirty] = useState(false);
-  const episode = resolveEpisode(CASE_CONTENT, story.sceneId, evidence.clues);
+    [dirty, setDirty] = useState(false),
+    [reviewId, setReviewId] = useState<string | null>(null);
+  const resolved = resolveEpisode(CASE_CONTENT, story.sceneId, evidence.clues);
+  // 回听笔记时暂时钉住当时那版录音；正常调查仍按现有线索选择对白
+  const episode =
+    (reviewId &&
+      CASE_CONTENT.episodes.find(
+        (e) => e.id === reviewId && e.sceneId === story.sceneId,
+      )) ||
+    resolved;
   const onHeard = useCallback((id: string, position: number) => {
     setHeard((h) => recordPosition(h, id, position));
   }, []);
@@ -56,8 +64,10 @@ export function useCase() {
     }
   };
   const go = (id: SceneId, position = 0) => {
+    setReviewId(null);
     audio.pause();
-    if (id === story.sceneId) {
+    const nextId = resolveEpisode(CASE_CONTENT, id, evidence.clues).id;
+    if (nextId === episode.id) {
       audio.seek(position);
     } else {
       audio.queueSeek(position);
@@ -68,6 +78,7 @@ export function useCase() {
   const choose = (id: string) =>
     run(() => {
       const next = applyChoice(CASE_CONTENT, story, id, evidence.clues);
+      setReviewId(null);
       audio.pause();
       audio.queueSeek(0);
       setStory(next);
@@ -107,14 +118,37 @@ export function useCase() {
       setNotice("请先听完这段声音，或检查是否已收集。");
       return;
     }
+    setReviewId(null);
     audio.pause();
     setEvidence(result);
     setDirty(true);
     setNotice("声音线索已归档，对话可能因此发生变化。");
   };
   const jump = (n: EvidenceNote) => {
-    go(n.anchor.sceneId, n.anchor.start);
-    setNotice(`已定位到「${n.title}」对应声音，点击播放回听。`);
+    const sourceId = n.anchor.sourceId;
+    if (!sourceId) {
+      setNotice("这条笔记来自旧存档，录音来源未知，无法精确回听。");
+      return;
+    }
+    const target = CASE_CONTENT.episodes.find((e) => e.id === sourceId);
+    if (!target) {
+      setNotice("这条笔记对应的录音已不存在，无法回听。");
+      return;
+    }
+    audio.pause();
+    setReviewId(target.id);
+    if (target.sceneId !== story.sceneId) {
+      setStory((s) => enterScene(CASE_CONTENT, s, target.sceneId));
+      setDirty(true);
+    }
+    if (target.id === episode.id) {
+      audio.seek(n.anchor.start);
+    } else {
+      audio.queueSeek(n.anchor.start);
+    }
+    setNotice(
+      `已回到「${target.title} · ${target.version}」中标记的片段，点击播放回听。`,
+    );
   };
   const save = (name: string) =>
     run(() => {
@@ -139,6 +173,7 @@ export function useCase() {
       const slot = slots.find((s) => s.id === id);
       if (!slot) throw new Error("存档不存在");
       const snap = validateSnapshot(slot.snapshot, CASE_CONTENT);
+      setReviewId(null);
       audio.pause();
       const nextEpisode = resolveEpisode(
         CASE_CONTENT,
@@ -215,6 +250,7 @@ export function useCase() {
         if (activeId === id) setActiveId(null);
       }),
     reset: () => {
+      setReviewId(null);
       audio.pause();
       if (story.sceneId !== "arrival") audio.queueSeek(0);
       setStory(createInvestigation());
